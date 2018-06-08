@@ -1,5 +1,6 @@
 package com.example.weiyupeng.hybridradio;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
@@ -81,7 +82,9 @@ public class HomePageActivity extends AppCompatActivity
         int id = item.getItemId();
 
         if (id == R.id.ic_lookup) {
-            // Handle the camera action
+            Intent intent = new Intent(getApplicationContext(),LookupActivity.class);
+            startActivity(intent);
+
         } else if (id == R.id.nav_gallery) {
 
         } else if (id == R.id.nav_slideshow) {

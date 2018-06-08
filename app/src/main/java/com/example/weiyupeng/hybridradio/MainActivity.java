@@ -19,7 +19,6 @@ public class MainActivity extends AppCompatActivity {
         Log.d("MainActivity", "onCreate called");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        matchScreenSize();
         View view = findViewById(R.id.main);
         view.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -31,6 +30,11 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    @Override
+    protected void onStart() {
+        matchScreenSize();
+        super.onStart();
+    }
 
     // set the size before render screen
     void matchScreenSize(){
