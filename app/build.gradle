@@ -32,4 +32,7 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:3.1.2'
     implementation 'com.squareup.okio:okio:1.11.0'
     implementation files('libs/xstream-1.4.9.jar')
+
+    annotationProcessor 'io.realm:realm-android:0.87.5'
+    implementation 'io.realm:realm-android:0.87.5'
 }

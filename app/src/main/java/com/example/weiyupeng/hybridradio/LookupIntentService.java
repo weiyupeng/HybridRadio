@@ -6,7 +6,15 @@ import android.content.Context;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
 
+import com.example.weiyupeng.hybridradio.StationInformationModule.Bearer;
+import com.example.weiyupeng.hybridradio.StationInformationModule.Genre;
+import com.example.weiyupeng.hybridradio.StationInformationModule.MediaDescription;
+import com.example.weiyupeng.hybridradio.StationInformationModule.Multimedia;
+import com.example.weiyupeng.hybridradio.StationInformationModule.ServiceGroup;
 import com.example.weiyupeng.hybridradio.StationInformationModule.ServiceInformation;
+import com.example.weiyupeng.hybridradio.db.DBGenre;
+import com.example.weiyupeng.hybridradio.db.DBService;
+import com.example.weiyupeng.hybridradio.db.DBServiceGroup;
 import com.thoughtworks.xstream.XStream;
 
 import org.radiodns.Application;
@@ -16,7 +24,9 @@ import org.radiodns.Record;
 import org.radiodns.Service;
 
 import java.io.IOException;
+import java.util.HashMap;
 
+import io.realm.Realm;
 import okhttp3.Call;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -116,15 +126,32 @@ public class LookupIntentService extends IntentService {
         Log.d(TAG,"handleActionStart +" );
         Log.d(TAG, "GCC = " + gcc + " PI Code = " + piCode + " Frequency = " + frequency);
         updateStatus(Status.Linking);
+
         this.url = FMlookup(gcc,piCode,frequency);
         if(url != null){
             updateStatus(Status.connecting);
+
         }
         else{
             updateStatus(Status.error);
             return;
         }
-        SPIHttpRequest(gcc,piCode,frequency);
+        if(SPIHttpRequest(gcc,piCode,frequency) && serviceInformation != null )
+        {
+            updateStatus(Status.parsing);
+            if(parseAndInsertData())
+            {
+              updateStatus(Status.finished);
+            }
+            else
+            {
+                updateStatus(Status.error);
+            }
+        }else{
+            updateStatus(Status.error);
+            return;
+        }
+
 
 
 
@@ -226,6 +253,160 @@ public class LookupIntentService extends IntentService {
             e.printStackTrace();
         }
         return url;
+    }
+
+    private boolean parseAndInsertData(){
+
+        Realm myRealm = Realm.getInstance(getApplicationContext());
+        myRealm.beginTransaction();
+        boolean status = true;
+        HashMap<String,DBServiceGroup> serviceGroupHashMap = new HashMap<String,DBServiceGroup>();
+
+        // parse service group
+        for(ServiceGroup mServiceGroup : serviceInformation.getServiceGroups()){
+            if(myRealm.where(DBServiceGroup.class).equalTo("id",mServiceGroup.getId()).count()!= 0)
+            {
+                Log.i(TAG,"service group is added before : " +mServiceGroup.getId());
+                continue;
+            }
+            DBServiceGroup dbServiceGroup = myRealm.createObject(DBServiceGroup.class);
+
+            dbServiceGroup.setId(mServiceGroup.getId());
+            serviceGroupHashMap.put(mServiceGroup.getId(),dbServiceGroup);
+
+            dbServiceGroup.setShortName(mServiceGroup.getShortName());
+            dbServiceGroup.setMediumName(mServiceGroup.getMediumName());
+            dbServiceGroup.setLongName(mServiceGroup.getLongName());
+            int picSize = -1;
+            for(MediaDescription mediaDescription : mServiceGroup.getMediaDescriptionList())
+            {
+                Multimedia multimedia = mediaDescription.getMultimedia();
+                if (  multimedia!= null)
+                {
+                    if(multimedia.getWidth() != null && picSize < Integer.parseInt(multimedia.getWidth()))
+                    {
+                        picSize = Integer.parseInt(multimedia.getWidth());
+                        dbServiceGroup.setMaxPicURL(multimedia.getUrl());
+                    }
+                }
+                else if(mediaDescription.getLongDescription() != null)
+                {
+                    dbServiceGroup.setDescription(mediaDescription.getLongDescription());
+                }
+                else if(mediaDescription.getMediumDescription() != null)
+                {
+                    dbServiceGroup.setDescription(mediaDescription.getMediumDescription());
+                }
+                else if(mediaDescription.getShortDescription() != null)
+                {
+                    dbServiceGroup.setDescription(mediaDescription.getShortDescription());
+                }
+
+            }
+
+        }
+
+        //parse Service
+
+        for(com.example.weiyupeng.hybridradio.StationInformationModule.Service service : serviceInformation.getServices().getServiceList())
+        {
+            if(service.getServiceGroupMember() != null && service.getServiceGroupMember().getId()!= null)
+            {
+                if(!serviceGroupHashMap.containsKey(service.getServiceGroupMember().getId()))
+                {
+                    Log.e(TAG,"Service is existed in service group:" + service.getServiceGroupMember().getId());
+                    continue;
+                }
+            }
+            else
+            {
+                Log.e(TAG,"Error !!! no group id:" + service.getLongName());
+                continue;
+            }
+
+
+
+            DBService dbService = myRealm.createObject(DBService.class);
+            dbService.setShortName(service.getShortName());
+            dbService.setMediumName(service.getMediumName());
+            dbService.setLongName(service.getLongName());
+            int picSize = -1;
+
+            if(service.getLongDescription() != null)
+            {
+                dbService.setDescription(service.getLongDescription());
+            }
+            else if(service.getMediumDescription() != null)
+            {
+                dbService.setDescription(service.getMediumDescription());
+            }
+            else if(service.getShortDescription() != null)
+            {
+                dbService.setDescription(service.getShortDescription());
+            }
+
+            if(service.getGenreList() != null)
+            {
+                for(Genre genre : service.getGenreList())
+                {
+                    DBGenre dbGenre = null;
+                    if(myRealm.where(DBGenre.class).equalTo("genre",genre.getType()).count() != 0)
+                    {
+                        dbGenre = myRealm.where(DBGenre.class).equalTo("genre",genre.getType()).findFirst();
+                    }
+                    else
+                    {
+                        dbGenre = myRealm.createObject(DBGenre.class);
+                        dbGenre.setGenre(genre.getType());
+                    }
+                    if(dbGenre != null) dbService.getGenreList().add(dbGenre);
+                }
+            }
+
+
+            for(MediaDescription mediaDescription : service.getMediaDescriptionList())
+            {
+                Multimedia multimedia = mediaDescription.getMultimedia();
+                if (  multimedia!= null)
+                {
+                    if(multimedia.getWidth() != null && picSize < Integer.parseInt(multimedia.getWidth())) {
+                        picSize = Integer.parseInt(multimedia.getWidth());
+                        dbService.setMaxPicURL(multimedia.getUrl());
+                    }
+                }
+                else if(mediaDescription.getLongDescription() != null)
+                {
+                    dbService.setDescription(mediaDescription.getLongDescription());
+                }
+                else if(mediaDescription.getMediumDescription() != null)
+                {
+                    dbService.setDescription(mediaDescription.getMediumDescription());
+                }
+                else if(mediaDescription.getShortDescription() != null)
+                {
+                    dbService.setDescription(mediaDescription.getShortDescription());
+                }
+            }
+            for(Bearer bearer : service.getBearerList())
+            {
+                if(bearer.getBitrate() != null){
+                    dbService.setAudioSourceURL(bearer.getId());
+                }
+            }
+
+            dbService.setGroupID(service.getServiceGroupMember().getId());
+
+            if(serviceGroupHashMap.get(dbService.getGroupID()) != null)
+            {
+                serviceGroupHashMap.get(dbService.getGroupID()).getServices().add(dbService);
+            }
+        }
+
+        updateStatus(Status.saving);
+        // store in DB
+        myRealm.commitTransaction();
+        myRealm.close();
+        return status;
     }
 
     private boolean SPIHttpRequest(String gcc, String piCode,String frequency){
